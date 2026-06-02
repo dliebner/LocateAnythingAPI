@@ -1,5 +1,7 @@
 import os
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
+# Prevents WSL2 System RAM fragmentation during the Math SDP fallback
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 import io
 import base64
 import time
@@ -7,7 +9,6 @@ import re
 import torch
 import threading
 
-torch.backends.cuda.enable_math_sdp(False)
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
