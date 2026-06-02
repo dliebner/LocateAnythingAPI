@@ -14,11 +14,11 @@ from typing import List, Dict, Any, Optional
 from PIL import Image
 from transformers import AutoProcessor, AutoModel, AutoTokenizer
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
-if torch.cuda.is_available():
-    dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
-else:
-    dtype = torch.float32
+if not torch.cuda.is_available():
+    raise RuntimeError("🚨 CUDA is not available! The container cannot see your GPU. Please check your Docker GPU passthrough settings.")
+
+device = "cuda"
+dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
 
 model = None
 processor = None
