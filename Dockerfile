@@ -23,7 +23,8 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 
 # 2. Compile FlashAttention so the 10-minute build is cached permanently
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install ninja flash-attn>=2.0.0 --no-build-isolation
+    pip install packaging setuptools wheel ninja && \
+    pip install flash-attn>=2.0.0 --no-build-isolation
 
 # 3. Copy requirements and install the remaining fast dependencies
 COPY requirements.txt .
