@@ -185,6 +185,11 @@ def generate_core(media_content: List[Dict[str, Any]], task: str, prompt: str, m
         images, videos = processor.process_vision_info(hf_messages)
         inputs = processor(text=[text], images=images, videos=videos, return_tensors="pt").to(device)
 
+        # Token Guardrail (Prevents 16k context explosion and NoneType telemetry crash)
+        seq_len = inputs["input_ids"].shape[1]
+        if seq_len > 15800:
+            raise ValueError(f"Payload Too Large: Sequence requires {seq_len} tokens (Limit: 16384). Please reduce short_size, lower video length, or batch frames.")
+
         # Cast any pixel values to correct dtype safely
         if "pixel_values" in inputs:
             inputs["pixel_values"] = inputs["pixel_values"].to(dtype)
@@ -365,9 +370,11 @@ async def rich_inference(req: RichInferenceRequest):
         # 2. Handle Image(s) / Frame Sequence
         if req.image_b64:
             images_to_process = req.image_b64 if isinstance(req.image_b64, list) else [req.image_b64]
-            for b64 in images_to_process:
+            for i, b64 in enumerate(images_to_process):
                 try:
                     img = decode_base64_image(b64)
+                    if len(images_to_process) > 1:
+                        media_content.append({"type": "text", "text": f"Picture {i+1}:"})
                     media_content.append({"type": "image", "image": img})
                 except ValueError as e:
                     raise HTTPException(status_code=400, detail=str(e))
