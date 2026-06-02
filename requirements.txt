@@ -13,3 +13,4 @@ einops
 lmdb==1.7.5
 peft
 huggingface_hub
+flash-attn>=2.0.0
