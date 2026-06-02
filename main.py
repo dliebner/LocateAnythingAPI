@@ -52,7 +52,8 @@ async def lifespan(app: FastAPI):
     
     patch_applied = False
     for name, mod in sys.modules.items():
-        if hasattr(mod, "VL_VISION_ATTENTION_FUNCTIONS") and "sdpa" in mod.VL_VISION_ATTENTION_FUNCTIONS:
+        vl_dict = getattr(mod, "VL_VISION_ATTENTION_FUNCTIONS", None)
+        if isinstance(vl_dict, dict) and "sdpa" in vl_dict:
             def patched_sdpa_attention(q, k, v, q_cu_seqlens=None, k_cu_seqlens=None):
                 seq_length = q.shape[0]
                 
