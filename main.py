@@ -1,7 +1,5 @@
 import os
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
-# Prevents WSL2 System RAM fragmentation during the Math SDP fallback
-os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 import io
 import base64
 import time
