@@ -10,6 +10,7 @@ LocateAnything-3B is a 3B-parameter vision-language model that returns bounding 
 - `/v1/chat/completions` — drop-in compatibility with OpenAI vision tool integrations
 - `/api/inference` — returns tokens/sec, boxes/sec, and decoding mode fallback stats alongside results
 - **Native 4K Image Support** — Uses FlashAttention-2 in the Vision Encoder for efficient memory scaling on large images.
+- **Native Video & Multi-Image Support** — Process .mp4 videos directly or send an array of sequential image frames. 
 - Dynamic image resizing (`short_size`) is fully customizable (default cap removed).
 - Exposes all three LocateAnything decoding modes: `hybrid`, `fast` (MTP), `slow` (AR)
 
@@ -31,8 +32,6 @@ git clone https://github.com/dliebner/LocateAnythingAPI.git
 cd LocateAnythingAPI
 ```
 
-**Replace:**
-```markdown
 Create a `.env` file:
 ```env
 HF_TOKEN=hf_your_token_here
@@ -87,6 +86,18 @@ print(response.json()["choices"][0]["message"]["content"])
 # <ref>bat</ref><box><100><200><150><250></box>...
 ```
 
+**Video & Multi-Frame Usage:**
+To send video, change the content type to `video_url` and use an `.mp4` data URI. To send multiple images (as a sequence), just append multiple `image_url` objects to the `content` array.
+```json
+{
+  "role": "user",
+  "content": [
+      { "type": "text", "text": "Find the cursor" },
+      { "type": "video_url", "video_url": { "url": "data:video/mp4;base64,AAAA..." } }
+  ]
+}
+```
+
 ### `POST /api/inference`
 
 Returns the raw output string plus generation stats. Useful for labeling pipelines where you want to track throughput or detect AR fallbacks.
@@ -98,7 +109,8 @@ with open("screenshot.png", "rb") as f:
     img_b64 = base64.b64encode(f.read()).decode()
 
 payload = {
-    "image_b64": img_b64,
+    "image_b64": img_b64, # OR a list: [frame1_b64, frame2_b64]
+    # "video_b64": "AAAA...", # Alternatively, send an mp4 base64 string
     "prompt": "gem, clover, ring, bat",
     "task": "detect",
     "mode": "hybrid",

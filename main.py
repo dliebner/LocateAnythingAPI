@@ -12,7 +12,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union
+import tempfile
 from PIL import Image
 from transformers import AutoProcessor, AutoModel, AutoTokenizer
 
@@ -124,59 +125,86 @@ def decode_base64_image(encoded_str: str) -> Image.Image:
     except Exception as e:
         raise ValueError(f"Invalid base64 image data: {e}")
 
+def decode_base64_video(encoded_str: str) -> str:
+    """Decodes base64 video and saves it to a temp file, returning the absolute file path."""
+    if "," in encoded_str:
+        encoded_str = encoded_str.split(",", 1)[1]
+    encoded_str = re.sub(r"\s+", "", encoded_str)
+    encoded_str += "=" * ((4 - len(encoded_str) % 4) % 4)
+    try:
+        video_bytes = base64.b64decode(encoded_str)
+        fd, path = tempfile.mkstemp(suffix=".mp4")
+        try:
+            with os.fdopen(fd, 'wb') as f:
+                f.write(video_bytes)
+            return path
+        except Exception:
+            try:
+                os.close(fd)
+            except Exception:
+                pass
+            if os.path.exists(path):
+                os.remove(path)
+            raise
+    except Exception as e:
+        raise ValueError(f"Invalid base64 video data: {e}")
+
 @torch.no_grad()
-def generate_core(image: Image.Image, task: str, prompt: str, mode: str, short_size: int, temp: float, max_tokens: int = 4096, top_p: float = 0.9, top_k: int = 50):
+def generate_core(media_content: List[Dict[str, Any]], task: str, prompt: str, mode: str, short_size: int, temp: float, max_tokens: int = 4096, top_p: float = 0.9, top_k: int = 50):
     """Shared inference logic used by both API endpoints."""
     with inference_lock:
-        # 1. Resize Image
-        w, h = image.size
-        target_short = None
-        
-        if short_size and short_size > 0:
-            target_short = int(short_size)
-        elif min(w, h) > 1024:
-            target_short = None
-            
-        if target_short is not None:
-            if w <= h:
-                new_w = target_short
-                scale_factor = new_w / w
-                new_h = int(h * scale_factor)
-            else:
-                new_h = target_short
-                scale_factor = new_h / h
-                new_w = int(w * scale_factor)
-            image = image.resize((new_w, new_h), Image.Resampling.BILINEAR)
+        # 1. Resize Images (Skip for video payloads)
+        for item in media_content:
+            if item["type"] == "image":
+                image = item["image"]
+                w, h = image.size
+                target_short = None
+                
+                if short_size and short_size > 0:
+                    target_short = int(short_size)
+                elif min(w, h) > 1024:
+                    target_short = None
+                    
+                if target_short is not None:
+                    if w <= h:
+                        new_w = target_short
+                        scale_factor = new_w / w
+                        new_h = int(h * scale_factor)
+                    else:
+                        new_h = target_short
+                        scale_factor = new_h / h
+                        new_w = int(w * scale_factor)
+                    item["image"] = image.resize((new_w, new_h), Image.Resampling.BILINEAR)
 
-        # 2. Build Prompt
+        # 2. Build Prompt Sequence
         final_prompt = format_prompt(task, prompt)
-        hf_messages = [{"role": "user", "content": [{"type": "image", "image": image}, {"type": "text", "text": final_prompt}]}]
+        hf_messages = [{"role": "user", "content": media_content + [{"type": "text", "text": final_prompt}]}]
 
         # 3. Process Inputs 
         text = processor.py_apply_chat_template(hf_messages, tokenize=False, add_generation_prompt=True)
         images, videos = processor.process_vision_info(hf_messages)
         inputs = processor(text=[text], images=images, videos=videos, return_tensors="pt").to(device)
 
-        # 4. Construct Generation Kwargs (Avoids HF warnings about passing temp when do_sample=False)
+        # Cast any pixel values to correct dtype safely
+        if "pixel_values" in inputs:
+            inputs["pixel_values"] = inputs["pixel_values"].to(dtype)
+        if "pixel_values_videos" in inputs:
+            inputs["pixel_values_videos"] = inputs["pixel_values_videos"].to(dtype)
+
+        # 4. Construct Generation Kwargs (Safely unpacks all vision/video inputs)
         gen_kwargs = {
-            "pixel_values": inputs["pixel_values"].to(dtype),
-            "input_ids": inputs["input_ids"],
-            "attention_mask": inputs["attention_mask"],
+            **inputs,
             "tokenizer": tokenizer,
             "max_new_tokens": max_tokens,
             "generation_mode": mode,
             "repetition_penalty": 1.1,
             "use_cache": True,
-            "verbose": True 
+            "verbose": True,
+            "do_sample": True,
+            "temperature": temp if temp > 0 else 0.1,
+            "top_p": top_p,
+            "top_k": top_k
         }
-        
-        if inputs.get("image_grid_hws") is not None:
-            gen_kwargs["image_grid_hws"] = inputs["image_grid_hws"]
-
-        gen_kwargs["do_sample"] = True
-        gen_kwargs["temperature"] = temp if temp > 0 else 0.1
-        gen_kwargs["top_p"] = top_p
-        gen_kwargs["top_k"] = top_k
 
         # 5. Generate
         try:
@@ -233,9 +261,11 @@ class ChatCompletionRequest(BaseModel):
 async def chat_completions(req: ChatCompletionRequest):
     if not model: raise HTTPException(status_code=503, detail="Model is still loading or unavailable.")
     
+    temp_files = []
     try:
         prompt_text = ""
-        image = None
+        media_content = []
+        
         for msg in req.messages:
             content = msg.get("content")
             if isinstance(content, str):
@@ -244,25 +274,40 @@ async def chat_completions(req: ChatCompletionRequest):
                 for item in content:
                     if item.get("type") == "text": 
                         prompt_text += item.get("text", "") + "\n"
+                    
                     elif item.get("type") == "image_url":
                         url = item.get("image_url", {}).get("url", "")
                         if url.startswith("http"):
-                            raise HTTPException(status_code=400, detail="Only base64 data URIs are currently supported (data:image/...).")
+                            raise HTTPException(status_code=400, detail="Only base64 data URIs are currently supported.")
                         elif url:
                             try:
-                                image = decode_base64_image(url)
+                                img = decode_base64_image(url)
+                                media_content.append({"type": "image", "image": img})
+                            except ValueError as e:
+                                raise HTTPException(status_code=400, detail=str(e))
+                                
+                    elif item.get("type") == "video_url":
+                        url = item.get("video_url", {}).get("url", "")
+                        if url.startswith("http"):
+                            raise HTTPException(status_code=400, detail="Only base64 data URIs are currently supported.")
+                        elif url:
+                            try:
+                                vid_path = decode_base64_video(url)
+                                temp_files.append(vid_path)
+                                # Qwen2-VL resolves local video paths natively via file:// URI
+                                media_content.append({"type": "video", "video": f"file://{vid_path}"})
                             except ValueError as e:
                                 raise HTTPException(status_code=400, detail=str(e))
         
         prompt_text = prompt_text.strip()
-        if not image: raise HTTPException(status_code=400, detail="No valid base64 image provided.")
+        if not media_content: raise HTTPException(status_code=400, detail="No valid base64 media provided.")
 
         temp = req.temperature if req.temperature is not None else 0.1
         max_tokens = req.max_tokens if req.max_tokens is not None else 4096
         top_p = req.top_p if req.top_p is not None else 0.9
         top_k = req.top_k if req.top_k is not None else 50
         
-        output_text, _, _ = generate_core(image, req.task, prompt_text, req.model_mode, req.short_size, temp, max_tokens, top_p, top_k)
+        output_text, _, _ = generate_core(media_content, req.task, prompt_text, req.model_mode, req.short_size, temp, max_tokens, top_p, top_k)
 
         created_time = int(time.time())
         return {
@@ -278,13 +323,19 @@ async def chat_completions(req: ChatCompletionRequest):
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        for f in temp_files:
+            if os.path.exists(f):
+                try: os.remove(f)
+                except: pass
 
 
 # ==========================================
 # ENDPOINT 2: RICH INFERENCE (For Offline Scripts)
 # ==========================================
 class RichInferenceRequest(BaseModel):
-    image_b64: str
+    image_b64: Optional[Union[str, List[str]]] = None
+    video_b64: Optional[str] = None
     prompt: str
     task: str = "detect"
     mode: str = "hybrid"
@@ -298,14 +349,34 @@ class RichInferenceRequest(BaseModel):
 async def rich_inference(req: RichInferenceRequest):
     if not model: raise HTTPException(status_code=503, detail="Model is still loading or unavailable.")
     
+    temp_files = []
     try:
-        try:
-            image = decode_base64_image(req.image_b64)
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
+        media_content = []
+        
+        # 1. Handle Video
+        if req.video_b64:
+            try:
+                vid_path = decode_base64_video(req.video_b64)
+                temp_files.append(vid_path)
+                media_content.append({"type": "video", "video": f"file://{vid_path}"})
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+                
+        # 2. Handle Image(s) / Frame Sequence
+        if req.image_b64:
+            images_to_process = req.image_b64 if isinstance(req.image_b64, list) else [req.image_b64]
+            for b64 in images_to_process:
+                try:
+                    img = decode_base64_image(b64)
+                    media_content.append({"type": "image", "image": img})
+                except ValueError as e:
+                    raise HTTPException(status_code=400, detail=str(e))
+                    
+        if not media_content:
+            raise HTTPException(status_code=400, detail="No valid base64 image_b64 or video_b64 provided.")
             
         output_text, token_sequence, stats = generate_core(
-            image, req.task, req.prompt, req.mode, req.short_size, 
+            media_content, req.task, req.prompt, req.mode, req.short_size, 
             req.temperature, req.max_tokens, req.top_p, req.top_k
         )
 
@@ -320,3 +391,8 @@ async def rich_inference(req: RichInferenceRequest):
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        for f in temp_files:
+            if os.path.exists(f):
+                try: os.remove(f)
+                except: pass
