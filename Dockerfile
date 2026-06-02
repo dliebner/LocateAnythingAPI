@@ -1,16 +1,20 @@
-FROM python:3.10-slim
+# Use official PyTorch devel image (includes CUDA 13.0, nvcc, and PyTorch 2.8.0)
+FROM pytorch/pytorch:2.8.0-cuda13.0-cudnn9-devel
 
 WORKDIR /app
-
-COPY requirements.txt .
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies (CUDA 13.0)
-# We use a BuildKit cache mount so pip doesn't re-download 2.5GB of PyTorch if requirements.txt changes
+# 1. Compile FlashAttention FIRST so the 10-minute build is cached permanently
+# --no-build-isolation forces pip to use the pre-installed PyTorch to compile the CUDA kernels
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu130
+    pip install ninja flash-attn>=2.0.0 --no-build-isolation
+
+# 2. Copy requirements and install fast dependencies
+COPY requirements.txt .
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install -r requirements.txt
 
 COPY . .
 
