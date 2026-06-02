@@ -42,10 +42,22 @@ async def lifespan(app: FastAPI):
     model = AutoModel.from_pretrained(
         model_id,
         torch_dtype=dtype,
-        _attn_implementation="flash_attention_2",
+        _attn_implementation="sdpa",
         trust_remote_code=True,
         token=token
     ).to(device).eval()
+
+    # --- MONKEYPATCH ---
+    # The custom Qwen2 LM in LocateAnything throws NotImplementedError for flash_attention_2.
+    # We load the model in "sdpa" mode to satisfy Qwen2, but monkeypatch the Vision Encoder's 
+    # attention router to use FlashAttention-2 anyway
+    import sys
+    for mod_name, mod in list(sys.modules.items()):
+        if 'LocateAnything' in mod_name and 'modeling_vit' in mod_name:
+            if hasattr(mod, 'VL_VISION_ATTENTION_FUNCTIONS') and hasattr(mod, 'multihead_attention'):
+                mod.VL_VISION_ATTENTION_FUNCTIONS["sdpa"] = mod.multihead_attention
+                print("🔧 Successfully monkeypatched Vision Encoder to use FlashAttention-2!")
+
     print("✅ Model loaded successfully!")
     yield
 
