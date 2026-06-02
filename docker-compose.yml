@@ -8,6 +8,9 @@ services:
       - "8000:8000"
     environment:
       - HF_TOKEN=${HF_TOKEN}
+    shm_size: '4gb' # Prevents PyTorch shared memory crashes
+    volumes:
+      - huggingface_cache:/root/.cache/huggingface # Prevents re-downloading the 6GB model
     deploy:
       resources:
         reservations:
@@ -16,3 +19,6 @@ services:
               count: all
               capabilities: [gpu]
     restart: unless-stopped
+
+volumes:
+  huggingface_cache:
