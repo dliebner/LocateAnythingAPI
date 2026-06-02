@@ -1,10 +1,13 @@
 import os
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+import sys
 import io
 import base64
 import time
 import re
 import torch
+import torch.nn.functional as F
 import threading
 import traceback
 
@@ -46,6 +49,39 @@ async def lifespan(app: FastAPI):
         trust_remote_code=True,
         token=token
     ).to(device).eval()
+    
+    # Monkey-patch NVIDIA's Vision Transformer
+    for name, mod in sys.modules.items():
+        if "modeling_vit" in name and "LocateAnything" in name:
+            def patched_sdpa_attention(q, k, v, q_cu_seqlens=None, k_cu_seqlens=None):
+                seq_length = q.shape[0]
+                
+                # 1. Add the missing batch dimension -> (1, num_heads, seqlen, head_dim)
+                q = q.transpose(0, 1).unsqueeze(0)
+                k = k.transpose(0, 1).unsqueeze(0)
+                v = v.transpose(0, 1).unsqueeze(0)
+                
+                # 2. If processing a single image, drop the mask to allow FlashAttention!
+                if q_cu_seqlens is not None and len(q_cu_seqlens) == 2:
+                    attention_mask = None
+                else:
+                    # Fallback for batched/multiple images (will trigger Math backend)
+                    attention_mask = torch.zeros([1, 1, seq_length, seq_length], device=q.device, dtype=torch.bool)
+                    for i in range(1, len(q_cu_seqlens)):
+                        attention_mask[..., q_cu_seqlens[i - 1]:q_cu_seqlens[i], q_cu_seqlens[i - 1]:q_cu_seqlens[i]] = True
+                
+                # 3. Execute highly optimized attention
+                attn_output = F.scaled_dot_product_attention(q, k, v, attention_mask, dropout_p=0.0)
+                
+                # 4. Strip the batch dimension and return to original shape
+                attn_output = attn_output.squeeze(0).transpose(0, 1).reshape(seq_length, -1)
+                return attn_output
+            
+            # Inject the patched function back into the module
+            mod.VL_VISION_ATTENTION_FUNCTIONS["sdpa"] = patched_sdpa_attention
+            print("⚡ Successfully patched Vision Transformer for 4D FlashAttention!")
+            break
+
     print("✅ Model loaded successfully!")
     yield
 
