@@ -1,14 +1,13 @@
 import os
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
-os.environ["OMP_NUM_THREADS"] = "4"
-os.environ["MKL_NUM_THREADS"] = "4"
 import io
 import base64
 import time
 import re
 import torch
-torch.set_num_threads(4) # Force PyTorch to respect the thread limit
 import threading
+
+torch.backends.cuda.enable_math_sdp(False)
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -44,7 +43,6 @@ async def lifespan(app: FastAPI):
         model_id,
         torch_dtype=dtype,
         _attn_implementation="sdpa",
-        low_cpu_mem_usage=True,
         trust_remote_code=True,
         token=token
     ).to(device).eval()
@@ -157,13 +155,10 @@ def generate_core(image: Image.Image, task: str, prompt: str, mode: str, short_s
         if inputs.get("image_grid_hws") is not None:
             gen_kwargs["image_grid_hws"] = inputs["image_grid_hws"]
 
-        if temp > 0:
-            gen_kwargs["do_sample"] = True
-            gen_kwargs["temperature"] = temp
-            gen_kwargs["top_p"] = top_p
-            gen_kwargs["top_k"] = top_k
-        else:
-            gen_kwargs["do_sample"] = False
+        gen_kwargs["do_sample"] = True
+        gen_kwargs["temperature"] = temp if temp > 0 else 0.1
+        gen_kwargs["top_p"] = top_p
+        gen_kwargs["top_k"] = top_k
 
         # 5. Generate
         try:
