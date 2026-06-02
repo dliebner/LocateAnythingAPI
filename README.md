@@ -17,6 +17,7 @@ LocateAnything-3B is a 3B-parameter vision-language model that returns bounding 
 ## Requirements
 
 - NVIDIA GPU (~12GB VRAM minimum)
+- Up-to-date NVIDIA Host Drivers (Driver version 580+ required for CUDA 13 support)
 - Docker + Docker Compose with NVIDIA Container Toolkit (Linux) or WSL2 GPU passthrough (Windows)
 - Hugging Face account with a Read-access token
 
