@@ -9,7 +9,8 @@ LocateAnything-3B is a 3B-parameter vision-language model that returns bounding 
 **Features:**
 - `/v1/chat/completions` — drop-in compatibility with OpenAI vision tool integrations
 - `/api/inference` — returns tokens/sec, boxes/sec, and decoding mode fallback stats alongside results
-- Dynamic image resizing (`short_size`) to avoid VRAM OOM on large images
+- **Native 4K Image Support** — Uses FlashAttention-2 in the Vision Encoder for efficient memory scaling on large images.
+- Dynamic image resizing (`short_size`) is fully customizable (default cap removed).
 - Exposes all three LocateAnything decoding modes: `hybrid`, `fast` (MTP), `slow` (AR)
 
 ---
@@ -43,7 +44,9 @@ Build and run:
 docker-compose up --build
 ```
 
-First boot downloads PyTorch dependencies and the ~6GB model weights from Hugging Face. Subsequent starts are fast.
+> **Note on First Build:** The first time you build the container, it will compile FlashAttention-2 from source for your specific GPU architecture. This takes **5-10 minutes**, but the Docker layer is permanently cached.
+
+First boot also downloads the ~6GB model weights from Hugging Face. Subsequent starts are fast.
 
 ---
 
