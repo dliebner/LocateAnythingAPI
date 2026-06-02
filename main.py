@@ -41,9 +41,10 @@ async def lifespan(app: FastAPI):
         model_id,
         torch_dtype=dtype,
         _attn_implementation="sdpa",
+        device_map="cuda",
         trust_remote_code=True,
         token=token
-    ).to(device).eval()
+    ).eval()
     print("✅ Model loaded successfully!")
     yield
 
