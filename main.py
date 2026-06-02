@@ -116,19 +116,25 @@ def decode_base64_image(encoded_str: str) -> Image.Image:
 def generate_core(image: Image.Image, task: str, prompt: str, mode: str, short_size: int, temp: float, max_tokens: int = 4096, top_p: float = 0.9, top_k: int = 50):
     """Shared inference logic used by both API endpoints."""
     with inference_lock:
-        # 1. Resize Image (OOM Protection) using Modern Pillow syntax
+        # 1. Resize Image
         w, h = image.size
-        max_size = 2560 # LocateAnything supports up to ~2.5K
+        target_short = None
         
-        scale = 1.0
-        if min(w, h) > short_size:
-            scale = short_size / min(w, h)
+        if short_size and short_size > 0:
+            target_short = min(int(short_size), 1024)
+        elif min(w, h) > 1024:
+            target_short = 1024
             
-        if max(w, h) * scale > max_size:
-            scale = max_size / max(w, h)
-            
-        if scale < 1.0:
-            image = image.resize((int(w * scale), int(h * scale)), Image.Resampling.BILINEAR)
+        if target_short is not None:
+            if w <= h:
+                new_w = target_short
+                scale_factor = new_w / w
+                new_h = int(h * scale_factor)
+            else:
+                new_h = target_short
+                scale_factor = new_h / h
+                new_w = int(w * scale_factor)
+            image = image.resize((new_w, new_h), Image.Resampling.BILINEAR)
 
         # 2. Build Prompt
         final_prompt = format_prompt(task, prompt)
@@ -162,7 +168,8 @@ def generate_core(image: Image.Image, task: str, prompt: str, mode: str, short_s
 
         # 5. Generate
         try:
-            result = model.generate(**gen_kwargs)
+            with torch.inference_mode():
+                result = model.generate(**gen_kwargs)
 
             # 6. Unpack Tuple Safely
             output_text, token_sequence, out_info = "", [], ""
