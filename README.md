@@ -29,9 +29,12 @@ git clone https://github.com/dliebner/LocateAnythingAPI.git
 cd LocateAnythingAPI
 ```
 
+**Replace:**
+```markdown
 Create a `.env` file:
 ```env
 HF_TOKEN=hf_your_token_here
+API_PORT=8000  # Defaults to 8000
 ```
 
 Build and run:
@@ -44,6 +47,8 @@ First boot downloads PyTorch dependencies and the ~6GB model weights from Huggin
 ---
 
 ## API
+
+*(Note: The examples below use port `8000`. If you changed `API_PORT` in your `.env` file, update the URLs accordingly.)*
 
 ### `POST /v1/chat/completions`
 
@@ -83,6 +88,11 @@ print(response.json()["choices"][0]["message"]["content"])
 Returns the raw output string plus generation stats. Useful for labeling pipelines where you want to track throughput or detect AR fallbacks.
 
 ```python
+import requests, base64
+
+with open("screenshot.png", "rb") as f:
+    img_b64 = base64.b64encode(f.read()).decode()
+
 payload = {
     "image_b64": img_b64,
     "prompt": "gem, clover, ring, bat",
@@ -106,6 +116,6 @@ print(data["stats"])     # {"tps": "84.3", "bps": "13.7", "switch_to_ar": "1", .
 
 ## License
 
-**This repo (Apache 2.0):** The API wrapper code is original work, licensed under Apache 2.0. Free to use commercially.
+**This repo (Apache 2.0):** The API wrapper code is licensed under Apache 2.0.
 
-**Model weights (NVIDIA Non-Commercial):** The weights are downloaded at runtime from Hugging Face and are governed by the [NVIDIA Model License](https://huggingface.co/nvidia/LocateAnything-3B/blob/main/LICENSE_MODEL).
+**Model weights (NVIDIA Non-Commercial):** The weights are downloaded at runtime from Hugging Face and are governed by the [NVIDIA Model License](https://huggingface.co/nvidia/LocateAnything-3B/blob/main/LICENSE).
