@@ -1,10 +1,13 @@
 import os
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
+os.environ["OMP_NUM_THREADS"] = "4"
+os.environ["MKL_NUM_THREADS"] = "4"
 import io
 import base64
 import time
 import re
 import torch
+torch.set_num_threads(4) # Force PyTorch to respect the thread limit
 import threading
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
@@ -41,6 +44,7 @@ async def lifespan(app: FastAPI):
         model_id,
         torch_dtype=dtype,
         _attn_implementation="sdpa",
+        low_cpu_mem_usage=True,
         trust_remote_code=True,
         token=token
     ).to(device).eval()
