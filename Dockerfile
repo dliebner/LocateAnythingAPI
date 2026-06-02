@@ -1,17 +1,31 @@
-# Use official PyTorch devel image (includes CUDA 13.0, nvcc, and PyTorch 2.8.0)
-FROM pytorch/pytorch:2.8.0-cuda13.0-cudnn9-devel
+# Use NVIDIA's official CUDA 13.0 development image
+FROM nvidia/cuda:13.0.0-devel-ubuntu22.04
+
+# Prevent apt-get from prompting for timezone info
+ENV DEBIAN_FRONTEND=noninteractive
 
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
+# Install Python 3.10, pip, and git
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 \
+    python3-pip \
+    python3-dev \
+    git \
+    && rm -rf /var/lib/apt/lists/*
 
-# 1. Compile FlashAttention FIRST so the 10-minute build is cached permanently
-# --no-build-isolation forces pip to use the pre-installed PyTorch to compile the CUDA kernels
+# Alias python3 to python for convenience
+RUN ln -s /usr/bin/python3 /usr/bin/python
+
+# 1. Install PyTorch FIRST so FlashAttention can compile against it
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install torch==2.8.0 torchvision==0.23.0 --extra-index-url https://download.pytorch.org/whl/cu130
+
+# 2. Compile FlashAttention so the 10-minute build is cached permanently
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install ninja flash-attn>=2.0.0 --no-build-isolation
 
-# 2. Copy requirements and install fast dependencies
+# 3. Copy requirements and install the remaining fast dependencies
 COPY requirements.txt .
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install -r requirements.txt
