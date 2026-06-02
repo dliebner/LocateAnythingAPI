@@ -370,11 +370,9 @@ async def rich_inference(req: RichInferenceRequest):
         # 2. Handle Image(s) / Frame Sequence
         if req.image_b64:
             images_to_process = req.image_b64 if isinstance(req.image_b64, list) else [req.image_b64]
-            for i, b64 in enumerate(images_to_process):
+            for b64 in images_to_process:
                 try:
                     img = decode_base64_image(b64)
-                    if len(images_to_process) > 1:
-                        media_content.append({"type": "text", "text": f"Picture {i+1}:"})
                     media_content.append({"type": "image", "image": img})
                 except ValueError as e:
                     raise HTTPException(status_code=400, detail=str(e))
