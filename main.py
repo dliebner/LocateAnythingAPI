@@ -8,6 +8,7 @@ import time
 import re
 import torch
 import threading
+import traceback
 
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
@@ -174,6 +175,8 @@ def generate_core(image: Image.Image, task: str, prompt: str, mode: str, short_s
                 
                 # patch for slow mode telemetry
                 if mode == "slow" and token_sequence:
+                    if isinstance(token_sequence, tuple):
+                        token_sequence = list(token_sequence)
                     token_sequence[-1] = ("ar", token_sequence[-1][1])
             else:
                 output_text = result
@@ -256,6 +259,7 @@ def chat_completions(req: ChatCompletionRequest):
     except HTTPException:
         raise
     except Exception as e:
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -297,4 +301,5 @@ def rich_inference(req: RichInferenceRequest):
     except HTTPException:
         raise
     except Exception as e:
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
