@@ -211,7 +211,7 @@ class ChatCompletionRequest(BaseModel):
     short_size: int = 1024
 
 @app.post("/v1/chat/completions")
-def chat_completions(req: ChatCompletionRequest):
+async def chat_completions(req: ChatCompletionRequest):
     if not model: raise HTTPException(status_code=503, detail="Model is still loading or unavailable.")
     
     try:
@@ -276,7 +276,7 @@ class RichInferenceRequest(BaseModel):
     top_k: int = 50
 
 @app.post("/api/inference")
-def rich_inference(req: RichInferenceRequest):
+async def rich_inference(req: RichInferenceRequest):
     if not model: raise HTTPException(status_code=503, detail="Model is still loading or unavailable.")
     
     try:
