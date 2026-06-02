@@ -108,4 +108,4 @@ print(data["stats"])     # {"tps": "84.3", "bps": "13.7", "switch_to_ar": "1", .
 
 **This repo (Apache 2.0):** The API wrapper code is original work, licensed under Apache 2.0. Free to use commercially.
 
-**Model weights (NVIDIA Non-Commercial):** The weights are downloaded at runtime from Hugging Face and are governed by the [NVIDIA Model License](https://huggingface.co/nvidia/LocateAnything-3B/blob/main/LICENSE_MODEL). Non-commercial/research use only. Commercial use of the weights or their outputs — including data distillation — is prohibited.
+**Model weights (NVIDIA Non-Commercial):** The weights are downloaded at runtime from Hugging Face and are governed by the [NVIDIA Model License](https://huggingface.co/nvidia/LocateAnything-3B/blob/main/LICENSE_MODEL).
