@@ -50,9 +50,9 @@ async def lifespan(app: FastAPI):
         token=token
     ).to(device).eval()
     
-    # Monkey-patch NVIDIA's Vision Transformer
+    patch_applied = False
     for name, mod in sys.modules.items():
-        if "modeling_vit" in name and "LocateAnything" in name:
+        if hasattr(mod, "VL_VISION_ATTENTION_FUNCTIONS") and "sdpa" in mod.VL_VISION_ATTENTION_FUNCTIONS:
             def patched_sdpa_attention(q, k, v, q_cu_seqlens=None, k_cu_seqlens=None):
                 seq_length = q.shape[0]
                 
@@ -79,8 +79,12 @@ async def lifespan(app: FastAPI):
             
             # Inject the patched function back into the module
             mod.VL_VISION_ATTENTION_FUNCTIONS["sdpa"] = patched_sdpa_attention
-            print("⚡ Successfully patched Vision Transformer for 4D FlashAttention!")
+            print(f"⚡ Successfully patched Vision Transformer for 4D FlashAttention in: {name}")
+            patch_applied = True
             break
+            
+    if not patch_applied:
+        print("⚠️ WARNING: Could not find the Vision Transformer module to patch!")
 
     print("✅ Model loaded successfully!")
     yield
