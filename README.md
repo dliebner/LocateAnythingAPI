@@ -1,6 +1,6 @@
 # LocateAnything API
 
-A FastAPI microservice wrapping NVIDIA's [LocateAnything-3B](https://huggingface.co/nvidia/LocateAnything-3B) spatial grounding model, built for programmatic use in automated pipelines and AI agents.
+A FastAPI microservice wrapping NVIDIA's [LocateAnything-3B](https://huggingface.co/nvidia/LocateAnything-3B) spatial grounding model.
 
 ## Overview
 
